@@ -1,59 +1,50 @@
-# Import necessary libraries
+# Save this as app.py if you're using Streamlit
+
 import streamlit as st
-import os
-from together import Together
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
 
-os.environ['TOGETHER_API_KEY'] = st.secrets["TOGETHER_API_KEY"]
+# Load the dataset
+df = pd.read_csv('SchoolSite_gdb_-5745748764799769002.csv')
 
-# Initialize Together client
-client = Together()
+# Preprocessing (assuming you already have these columns)
+df['UTILIZATION_RATE'] = df['ENROLLMNT'] / df['CAPACITY'].replace(0, pd.NA)
 
-# Function to generate Python code using CodeLlama
-def generate_code_with_codellama(description):
-    """
-    Generate Python code based on a natural language description using CodeLlama.
+# Sidebar Filter
+level = st.sidebar.selectbox('Select School Level', ['All', 'Elementary', 'Middle', 'Senior'])
 
-    Parameters:
-    description (str): A plain-text description of the desired Python code.
+if level != 'All':
+    df = df[df['GRADES'].str.contains(level, na=False)]
 
-    Returns:
-    str: Generated Python code or an error message.
-    """
-    try:
-        prompt = (
-            f"You are a Python programming assistant. Based on the following description, "
-            f"generate the Python code. Ensure the code is clear, well-commented, and includes necessary imports.\n\n"
-            f"Description: {description}\n\n"
-            f"Generated Python Code:"
-        )
+st.title('Miami-Dade School Enrollment Analysis')
 
-        # Call Together AI
-        response = client.chat.completions.create(
-            model="meta-llama/Llama-3.3-70B-Instruct-Turbo",  # CodeLlama model
-            messages=[{"role": "user", "content": prompt}]
-        )
+# Top and Bottom Schools
+st.subheader('Top 10 Schools by Enrollment')
+st.dataframe(df.sort_values('ENROLLMNT', ascending=False)[['NAME', 'GRADES', 'CAPACITY', 'ENROLLMNT', 'UTILIZATION_RATE']].head(10))
 
-        # Extract the generated code
-        generated_code = response.choices[0].message.content.strip()
-        return generated_code
+st.subheader('Schools Over Capacity (>100%)')
+overcrowded = df[df['UTILIZATION_RATE'] > 1]
+st.dataframe(overcrowded[['NAME', 'GRADES', 'CAPACITY', 'ENROLLMNT', 'UTILIZATION_RATE']])
 
-    except Exception as e:
-        return f"Error with CodeLlama: {e}"
+st.subheader('Schools Underutilized (<80%)')
+underutilized = df[df['UTILIZATION_RATE'] < 0.8]
+st.dataframe(underutilized[['NAME', 'GRADES', 'CAPACITY', 'ENROLLMNT', 'UTILIZATION_RATE']])
 
+# Visualization
+st.subheader('Top 10 Overcrowded Schools')
+top_overcrowded = overcrowded.sort_values('UTILIZATION_RATE', ascending=False).head(10)
+fig, ax = plt.subplots(figsize=(10,5))
+sns.barplot(data=top_overcrowded, x='UTILIZATION_RATE', y='NAME', palette='Reds_r', ax=ax)
+plt.xlabel('Utilization Rate')
+plt.ylabel('School Name')
+st.pyplot(fig)
 
-# Streamlit app layout
-st.title("Python Code Generator with CodeLlama")
-st.write("Enter a description of the Python application or code you need. CodeLlama will generate the corresponding Python code.")
+st.subheader('Utilization Rate Distribution')
+fig2, ax2 = plt.subplots()
+sns.histplot(df['UTILIZATION_RATE'].dropna(), bins=20, kde=True)
+st.pyplot(fig2)
 
-# Input box for the user to enter a description
-description = st.text_area("Application or Code Description", placeholder="Describe the application or code you want")
-
-# Button to trigger code generation
-if st.button("Generate Code"):
-    if description.strip():
-        st.write("### Generated Python Code")
-        # Generate code
-        generated_code = generate_code_with_codellama(description)
-        st.code(generated_code, language="python")
-    else:
-        st.error("Please provide a valid description.")
+# Download Button
+st.subheader('Download Filtered Data')
+st.download_button('Download CSV', df.to_csv(index=False), 'schools_filtered.csv')
